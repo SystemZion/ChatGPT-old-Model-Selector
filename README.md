@@ -1,6 +1,7 @@
 # ChatGPT Classic Model Selector
 
 一个 Tampermonkey 用户脚本，为 ChatGPT 网页版恢复经典的左上角模型选择器界面。
+由Claude创作
 
 ![Demo](https://img.shields.io/badge/Tampermonkey-UserScript-green) ![Version](https://img.shields.io/badge/version-9.2.0-blue) ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 

@@ -84,7 +84,7 @@ ChatGPT 把模型选择入口藏到了底部输入框右侧的一个小按钮里
 
 ```bash
 # 克隆仓库
-git clone https://github.com/your-username/chatgpt-classic-model-selector.git
+git clone https://github.com/SystemZion/ChatGPT-old-Model-Selector.git
 
 # 脚本是单文件，直接编辑即可
 # chatgpt-classic-model-selector.user.js

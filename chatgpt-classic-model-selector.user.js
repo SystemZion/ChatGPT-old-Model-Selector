@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT Classic Model Selector
 // @namespace    https://github.com/tampermonkey-scripts
-// @version      9.2.0
+// @version      10.0.0
 // @description  Restores the classic top-left model selector UI for ChatGPT
 // @author       Claude
 // @match        https://chatgpt.com/*
@@ -13,7 +13,7 @@
 (function () {
   'use strict';
 
-  const STORAGE_MODEL = 'cgpt-cls-model-v9';
+  const STORAGE_MODEL = 'cgpt-cls-model-v10';
   const TOAST_MS = 3500;
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const norm = s => (s || '').toLowerCase().trim().replace(/\s+/g, ' ');
@@ -245,136 +245,37 @@
   }
 
   // ─── Read legacy models from config panel ──────────────────────
-  // Opens version combobox, reads versions, for each version reads modes.
-  // Returns [{name, version, mode, desc}]
+  // Reads current version from combobox, lists other known versions with their modes.
+  // Actual version availability is verified when user tries to select.
   async function readLegacyModels(configPanel) {
     const legacy = [];
     if (!configPanel) return legacy;
     try {
-      const cb = configPanel.querySelector('[role="combobox"][aria-labelledby="model-selection-label"]');
-      if (!cb) return legacy;
       const origVer = readVersion(configPanel);
+      const origModes = readConfigModes(configPanel);
 
-      // Open combobox and find the dropdown container via snapshot diff
-      const snap = snapshot();
-      simClick(cb);
-      await sleep(400);
+      // Known version list — will be filtered by what's actually selectable
+      const allVersions = ['5.5', '5.4', '5.3', '5.2', '4.5', 'o3'];
+      const otherVersions = allVersions.filter(v => v !== origVer);
 
-      // Find dropdown: new element that appeared after clicking combobox
-      let dropdown = findNew(snap);
-      // Also try aria-controls
-      if (!dropdown) {
-        const cid = cb.getAttribute('aria-controls');
-        if (cid) dropdown = document.getElementById(cid);
-      }
-
-      if (!dropdown) {
-        // Fallback: search for a new fixed/absolute container near the combobox
-        for (const el of document.body.children) {
-          if (snap.has(el) || el.id === 'cgpt-classic-selector-host') continue;
-          const r = el.getBoundingClientRect();
-          if (r.width > 30 && r.height > 20) { dropdown = el; break; }
-        }
-      }
-
-      // Read version texts ONLY from the dropdown container
-      const versions = [];
-      if (dropdown) {
-        // Get all leaf text nodes that look like version numbers
-        const walk = (node) => {
-          if (!node) return;
-          for (const child of (node.children || [])) {
-            const t = (child.textContent || '').trim();
-            // Version pattern: "5.5", "5.4", "4.5", "o3" etc.
-            if (/^(\d+\.\d+|o\d+)$/.test(t) && child.children.length <= 1) {
-              const r = child.getBoundingClientRect();
-              if (r.width > 10 && r.height > 10) {
-                if (t !== origVer) versions.push(t);
-              }
-            }
-            walk(child);
-          }
-        };
-        walk(dropdown);
-      }
-
-      // Deduplicate
-      const uniqueVers = [...new Set(versions)];
-
-      // Close combobox
-      pressEsc();
-      await sleep(200);
-
-      // For each old version, switch to it, read its modes
-      for (const ver of uniqueVers) {
-        // Open combobox
-        const snap2 = snapshot();
-        simClick(cb);
-        await sleep(300);
-        const dd2 = findNew(snap2) || dropdown;
-
-        // Find and click the version option in the dropdown
-        let clicked = false;
-        if (dd2) {
-          const findVer = (node) => {
-            if (clicked) return;
-            for (const child of (node.children || [])) {
-              const t = (child.textContent || '').trim();
-              if (t === ver && child.children.length <= 1) {
-                const r = child.getBoundingClientRect();
-                if (r.width > 10 && r.height > 10) {
-                  simClick(child);
-                  clicked = true;
-                  return;
-                }
-              }
-              findVer(child);
-            }
-          };
-          findVer(dd2);
-        }
-        if (!clicked) { pressEsc(); await sleep(100); continue; }
-
-        await sleep(300);
-
-        // Read modes for this version
-        const panel2 = findConfigPanel() || configPanel;
-        const modes = readConfigModes(panel2);
-
-        if (modes.length === 0) {
-          legacy.push({ name: ver, version: ver, mode: '', desc: '' });
+      // For each other version, we assume same modes as current version
+      // (except o3 which is a single model). Actual availability verified at switch time.
+      for (const ver of otherVersions) {
+        const isNonGPT = /^o\d/.test(ver);
+        const prefix = isNonGPT ? ver : `GPT-${ver}`;
+        if (isNonGPT) {
+          // o3 etc. — single model
+          legacy.push({ name: ver, version: ver, mode: '', desc: '传统推理模型' });
         } else {
-          for (const m of modes) {
+          // For numeric versions, list the same modes as current
+          // (but some may not exist — user will see toast if so)
+          for (const m of origModes) {
             const isInstant = norm(m.name) === 'instant';
-            const isNonGPT = /^o\d/.test(ver); // o3, o4 etc. don't get GPT- prefix
-            const prefix = isNonGPT ? ver : `GPT-${ver}`;
             const displayName = isInstant ? prefix : `${prefix} ${m.name}`;
             legacy.push({ name: displayName, version: ver, mode: m.name, desc: m.desc });
           }
         }
       }
-
-      // Switch back to original version
-      const snap3 = snapshot();
-      simClick(cb);
-      await sleep(300);
-      const dd3 = findNew(snap3) || dropdown;
-      if (dd3) {
-        const findOrig = (node) => {
-          for (const child of (node.children || [])) {
-            const t = (child.textContent || '').trim();
-            if (t === origVer && child.children.length <= 1) {
-              const r = child.getBoundingClientRect();
-              if (r.width > 10 && r.height > 10) { simClick(child); return true; }
-            }
-            if (findOrig(child)) return true;
-          }
-          return false;
-        };
-        findOrig(dd3);
-      }
-      await sleep(200);
-
     } catch (err) {
       console.warn('[CLS] readLegacy:', err);
     }
@@ -688,33 +589,38 @@
         ui.menu.classList.add('vis');
 
         try {
-          // 1. Open quick menu and read main items
+          // Open quick menu and read main items
           const data = await openAndReadQuickMenu();
           if (!data?.popover) { closeMenu(); showToast('无法打开模型菜单'); return; }
 
           const version = data.version;
           const mainItems = data.mainItems.map(i => ({ name: i.name, desc: i.desc }));
 
-          // 2. If we have cached legacy data, use it; otherwise read now
-          let legacyItems = cachedMenuData?.legacy || null;
+          // Close quick menu
+          pressEsc();
+          await sleep(100);
 
-          if (!legacyItems && data.configEl) {
-            // Open config panel to read legacy models
-            const configPanel = await openConfigViaMenu(data);
-            if (configPanel) {
-              legacyItems = await readLegacyModels(configPanel);
-              await closeConfig();
-              cachedMenuData = { legacy: legacyItems };
+          // Generate legacy items from known versions × current modes
+          const allVersions = ['5.5', '5.4', '5.3', '5.2', '4.5', 'o3'];
+          const otherVersions = allVersions.filter(v => v !== version);
+          const legacyItems = [];
+          for (const ver of otherVersions) {
+            const isNonGPT = /^o\d/i.test(ver);
+            if (isNonGPT) {
+              legacyItems.push({ name: ver, version: ver, mode: '', desc: '传统推理模型' });
+            } else {
+              const prefix = `GPT-${ver}`;
+              for (const m of mainItems) {
+                const isInstant = norm(m.name) === 'instant';
+                const displayName = isInstant ? prefix : `${prefix} ${m.name}`;
+                legacyItems.push({ name: displayName, version: ver, mode: m.name, desc: m.desc });
+              }
             }
-          } else {
-            // Close the quick menu since we're not going to config
-            pressEsc();
-            await sleep(100);
           }
 
-          if (!menuOpen) return; // User may have closed during loading
+          if (!menuOpen) return;
           posMenu();
-          renderMenu(mainItems, version, legacyItems || []);
+          renderMenu(mainItems, version, legacyItems);
         } catch (err) {
           console.warn('[CLS] toggleMenu:', err);
           closeMenu();
